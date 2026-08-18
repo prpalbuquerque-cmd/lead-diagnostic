@@ -54,6 +54,62 @@
             to { opacity: 1; transform: translateY(0); }
         }
 
+        /* PRINT STYLES - CORRIGE IMPRESSÃO EM BRANCO */
+        @media print {
+            body {
+                background: white;
+                margin: 0;
+                padding: 0;
+            }
+
+            .container {
+                max-width: 100%;
+                margin: 0;
+                padding: 20px;
+                min-height: auto;
+            }
+
+            .screen {
+                display: none !important;
+            }
+
+            .report-screen {
+                display: block !important;
+                background: white !important;
+                box-shadow: none !important;
+            }
+
+            .report-screen .report-content {
+                background: white !important;
+                color: black !important;
+                box-shadow: none !important;
+            }
+
+            .report-screen h2,
+            .report-screen h3,
+            .report-screen p,
+            .report-screen .metric {
+                color: black !important;
+            }
+
+            .btn {
+                display: none !important;
+            }
+
+            .nav-buttons {
+                display: none !important;
+            }
+
+            canvas {
+                max-width: 100% !important;
+                page-break-inside: avoid;
+            }
+
+            .report-content {
+                page-break-after: avoid;
+            }
+        }
+
         /* WELCOME SCREEN */
         .welcome-screen {
             background: white;
@@ -1294,6 +1350,11 @@
                 btn.disabled = true;
                 btn.innerHTML = '<span class="loading-spinner"></span>Enviando...';
 
+                // Validar dados
+                if (!appState.userData.email || !appState.userData.email.includes('@')) {
+                    throw new Error('E-mail inválido');
+                }
+
                 const payload = {
                     respondent: {
                         name: appState.userData.name,
@@ -1306,6 +1367,8 @@
                     report: appState.reportHTML
                 };
 
+                console.log('Enviando payload:', payload);
+
                 const response = await fetch('/.netlify/functions/send-email', {
                     method: 'POST',
                     headers: {
@@ -1314,31 +1377,73 @@
                     body: JSON.stringify(payload)
                 });
 
+                const responseText = await response.text();
+                console.log('Response status:', response.status);
+                console.log('Response text:', responseText);
+
                 if (response.ok) {
                     showSuccessMessage('✓ E-mail enviado com sucesso! Verifique sua caixa de entrada.');
                     btn.innerHTML = '✓ Enviado com sucesso!';
                 } else {
-                    throw new Error('Erro ao enviar e-mail');
+                    const errorMsg = responseText ? responseText : `HTTP ${response.status}`;
+                    throw new Error(`Erro ao enviar e-mail: ${errorMsg}`);
                 }
             } catch (error) {
-                console.error('Erro:', error);
-                showErrorMessage('Erro ao enviar e-mail. Tente novamente ou baixe como PDF.');
+                console.error('Erro ao enviar e-mail:', error);
+                showErrorMessage(`Erro ao enviar e-mail: ${error.message}. Tente novamente ou baixe como PDF.`);
                 btn.innerHTML = originalText;
                 btn.disabled = false;
             }
         }
 
         function downloadPdf() {
-            const element = document.querySelector('.report-screen .report-content');
-            const opt = {
-                margin: 10,
-                filename: `LEAD-${appState.userData.name.replace(/\s+/g, '_')}.pdf`,
-                image: { type: 'jpeg', quality: 0.98 },
-                html2canvas: { scale: 2 },
-                jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4' }
-            };
+            try {
+                const element = document.querySelector('.report-screen .report-content');
+                if (!element) {
+                    showErrorMessage('Erro: Relatório não encontrado. Finalize o diagnóstico primeiro.');
+                    return;
+                }
 
-            html2pdf().set(opt).from(element).save();
+                const opt = {
+                    margin: [10, 10, 10, 10],
+                    filename: `LEAD-Diagnostic-${appState.userData.name.replace(/\s+/g, '_')}-${new Date().toISOString().split('T')[0]}.pdf`,
+                    image: { type: 'jpeg', quality: 0.95 },
+                    html2canvas: { 
+                        scale: 2,
+                        allowTaint: true,
+                        useCORS: true
+                    },
+                    jsPDF: { 
+                        orientation: 'portrait', 
+                        unit: 'mm', 
+                        format: 'a4',
+                        compress: true
+                    },
+                    pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+                };
+
+                // Cria uma cópia do elemento para não modificar o original
+                const clonedElement = element.cloneNode(true);
+                
+                // Remove botões da cópia antes de gerar PDF
+                const buttons = clonedElement.querySelectorAll('.btn');
+                buttons.forEach(btn => btn.remove());
+
+                html2pdf()
+                    .set(opt)
+                    .from(clonedElement)
+                    .save()
+                    .then(() => {
+                        showSuccessMessage('✓ PDF baixado com sucesso!');
+                    })
+                    .catch(error => {
+                        console.error('Erro ao gerar PDF:', error);
+                        showErrorMessage('Erro ao gerar PDF. Tente novamente.');
+                    });
+            } catch (error) {
+                console.error('Erro ao baixar PDF:', error);
+                showErrorMessage('Erro ao baixar PDF. Tente novamente.');
+            }
         }
 
         function printReport() {
