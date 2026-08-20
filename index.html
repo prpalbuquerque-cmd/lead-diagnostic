@@ -1042,7 +1042,6 @@
             currentScreen: 'welcome',
             userData: {
                 name: '',
-                email: '',
                 position: ''
             },
             responses: {},
@@ -1075,7 +1074,7 @@
             document.getElementById('printBtn').addEventListener('click', printReport);
             document.getElementById('restartBtn').addEventListener('click', restartApp);
 
-            ['userName', 'userEmail', 'userPosition'].forEach(id => {
+            ['userName', 'userPosition'].forEach(id => {
                 const element = document.getElementById(id);
                 if (element) {
                     element.addEventListener('input', (e) => {
@@ -1087,8 +1086,8 @@
         }
 
         function startQuiz() {
-            const { name, email, position } = appState.userData;
-            if (!name.trim() || !email.trim() || !position.trim()) {
+            const { name, position } = appState.userData;
+            if (!name.trim() || !position.trim()) {
                 alert('Por favor, preencha todos os campos antes de continuar.');
                 return;
             }
@@ -1213,7 +1212,6 @@
             const secondaryProfile = leadershipProfiles[appState.secondaryStyle];
 
             document.getElementById('reportName').textContent = appState.userData.name;
-            document.getElementById('reportEmail').textContent = appState.userData.email;
             document.getElementById('reportPosition').textContent = appState.userData.position;
 
             const today = new Date();
@@ -1489,14 +1487,12 @@
 
                 setText(8, 'bold', primary);
                 doc.text('PARTICIPANTE', margin, 51);
-                doc.text('E-MAIL', margin, 67);
                 doc.text('CARGO', 112, 51);
-                doc.text('DATA', 112, 67);
+                doc.text('DATA', margin, 67);
                 setText(10, 'normal', gray);
                 doc.text(appState.userData.name, margin, 57);
-                doc.text(appState.userData.email, margin, 73);
                 doc.text(appState.userData.position, 112, 57);
-                doc.text(new Date().toLocaleDateString('pt-BR'), 112, 73);
+                doc.text(new Date().toLocaleDateString('pt-BR'), margin, 73);
 
                 let y = sectionTitle('Resultado do Diagnóstico', 91);
                 const bars = [
@@ -1629,7 +1625,6 @@
                 currentScreen: 'welcome',
                 userData: {
                     name: '',
-                    email: '',
                     position: ''
                 },
                 responses: {},
@@ -1645,7 +1640,6 @@
             };
 
             document.getElementById('userName').value = '';
-            document.getElementById('userEmail').value = '';
             document.getElementById('userPosition').value = '';
             document.querySelector('.success-message').classList.remove('show');
 
@@ -1680,11 +1674,6 @@
                 <div class="form-group">
                     <label for="userName">Nome Completo *</label>
                     <input type="text" id="userName" placeholder="Ex: João Silva" required>
-                </div>
-
-                <div class="form-group">
-                    <label for="userEmail">E-mail *</label>
-                    <input type="email" id="userEmail" placeholder="seu.email@empresa.com" required>
                 </div>
 
                 <div class="form-group">
@@ -1733,10 +1722,6 @@
                         <div class="report-meta-item">
                             <span class="report-meta-label">Participante</span>
                             <span id="reportName"></span>
-                        </div>
-                        <div class="report-meta-item">
-                            <span class="report-meta-label">E-mail</span>
-                            <span id="reportEmail"></span>
                         </div>
                         <div class="report-meta-item">
                             <span class="report-meta-label">Cargo</span>
