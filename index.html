@@ -4,8 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Diagnóstico de Liderança Situacional - Modelo LEAD</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="vendor/chart.min.js"></script>
+    <script src="vendor/html2pdf.bundle.min.js"></script>
+    <script src="vendor/jspdf.umd.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -377,6 +378,67 @@
 
         .report-content {
             padding: 60px 50px;
+            background: white;
+        }
+
+        .report-document {
+            background: white;
+        }
+
+        .pdf-export-stage {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 794px;
+            background: white;
+            color: #2d3748;
+            z-index: 9999;
+            overflow: visible;
+            pointer-events: none;
+        }
+
+        .pdf-export-stage .report-content {
+            width: 794px;
+            padding: 42px 46px;
+            background: white;
+        }
+
+        .pdf-export-stage .report-document {
+            position: relative;
+            left: 0;
+            width: 794px;
+            margin: 0;
+            transform: none;
+            background: white;
+        }
+
+        .pdf-export-stage .report-section,
+        .pdf-export-stage .report-header,
+        .pdf-export-stage .style-card,
+        .pdf-export-stage .tips-section,
+        .pdf-export-stage .matrix-table,
+        .pdf-export-stage .report-footer,
+        .pdf-export-stage .pdf-avoid-break {
+            break-inside: avoid;
+            page-break-inside: avoid;
+        }
+
+        .pdf-export-stage .chart-container {
+            height: auto;
+            min-height: 0;
+        }
+
+        .pdf-export-stage .pdf-chart-image {
+            display: block;
+            width: 100%;
+            height: auto;
+            max-height: 300px;
+            object-fit: contain;
+        }
+
+        .pdf-export-stage .pdf-page-break-before {
+            break-before: page;
+            page-break-before: always;
         }
 
         .report-header {
@@ -1155,12 +1217,14 @@
             document.getElementById('reportPosition').textContent = appState.userData.position;
 
             const today = new Date();
-            document.getElementById('reportDate').textContent = 
-                today.toLocaleDateString('pt-BR', { 
+            const formattedDate = today.toLocaleDateString('pt-BR', { 
                     year: 'numeric', 
                     month: 'long', 
                     day: 'numeric' 
                 });
+            document.querySelectorAll('[data-report-date]').forEach(element => {
+                element.textContent = formattedDate;
+            });
 
             renderChart();
 
@@ -1215,7 +1279,7 @@
             `;
 
             // Guardar HTML do relatório para PDF
-            appState.reportHTML = document.querySelector('.report-screen .report-content').innerHTML;
+            appState.reportHTML = document.getElementById('pdfReport').innerHTML;
         }
 
         function renderChart() {
@@ -1317,7 +1381,7 @@
         }
 
         function showErrorMessage(message) {
-            const errorEl = document.querySelector('.error-message');
+            const errorEl = document.querySelector('.screen.active .error-message') || document.querySelector('.error-message');
             if (errorEl) {
                 errorEl.textContent = message;
                 errorEl.classList.add('show');
@@ -1325,7 +1389,7 @@
         }
 
         function clearErrorMessage() {
-            const errorEl = document.querySelector('.error-message');
+            const errorEl = document.querySelector('.screen.active .error-message') || document.querySelector('.error-message');
             if (errorEl) {
                 errorEl.classList.remove('show');
             }
@@ -1344,57 +1408,215 @@
 
 
 
-        function downloadPdf() {
+        function sanitizeFilename(value) {
+            return value
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .replace(/[^a-zA-Z0-9_-]+/g, '_')
+                .replace(/^_+|_+$/g, '') || 'Participante';
+        }
+
+        async function downloadPdf() {
             const btn = document.getElementById('downloadPdfBtn');
             const originalText = btn.innerHTML;
-            
+
             try {
                 btn.disabled = true;
                 btn.innerHTML = '⏳ Gerando PDF...';
-                
-                const element = document.querySelector('.report-screen .report-content');
-                if (!element) {
-                    alert('❌ ERRO: Relatório não encontrado!');
-                    btn.innerHTML = originalText;
-                    btn.disabled = false;
-                    return;
+
+                if (!window.jspdf || typeof window.jspdf.jsPDF !== 'function') {
+                    throw new Error('O gerador de PDF não foi carregado. Verifique sua conexão e tente novamente.');
                 }
 
-                // Clona elemento e remove botões
-                const clonedElement = element.cloneNode(true);
-                const buttons = clonedElement.querySelectorAll('.btn');
-                buttons.forEach(b => b.remove());
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+                const profile = leadershipProfiles[appState.dominantStyle];
+                const secondary = leadershipProfiles[appState.secondaryStyle];
+                const pageWidth = 210;
+                const pageHeight = 297;
+                const margin = 18;
+                const contentWidth = pageWidth - (margin * 2);
+                const primary = [30, 58, 95];
+                const accent = [124, 58, 237];
+                const gray = [85, 85, 85];
 
-                // Usar html2pdf simples e direto
-                const opt = {
-                    margin: 10,
-                    filename: `LEAD-Diagnostic-${appState.userData.name.replace(/\s+/g, '_')}-${new Date().toISOString().split('T')[0]}.pdf`,
-                    image: { type: 'jpeg', quality: 0.98 },
-                    html2canvas: { scale: 2 },
-                    jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4' }
+                const setText = (size = 10, style = 'normal', color = gray) => {
+                    doc.setFont('helvetica', style);
+                    doc.setFontSize(size);
+                    doc.setTextColor(...color);
+                };
+                const writeWrapped = (text, x, y, width, lineHeight = 5) => {
+                    const lines = doc.splitTextToSize(String(text), width);
+                    doc.text(lines, x, y);
+                    return y + (lines.length * lineHeight);
+                };
+                const sectionTitle = (title, y) => {
+                    setText(16, 'bold', primary);
+                    doc.text(title, margin, y);
+                    doc.setDrawColor(226, 232, 240);
+                    doc.setLineWidth(0.6);
+                    doc.line(margin, y + 3, pageWidth - margin, y + 3);
+                    return y + 12;
+                };
+                const addPageHeader = (title) => {
+                    setText(9, 'bold', accent);
+                    doc.text('DIAGNÓSTICO LEAD', margin, 13);
+                    setText(9, 'normal', [120, 120, 120]);
+                    doc.text(title, pageWidth - margin, 13, { align: 'right' });
+                    doc.setDrawColor(...accent);
+                    doc.line(margin, 17, pageWidth - margin, 17);
+                };
+                const addBullets = (items, x, y, width, color = gray) => {
+                    setText(10, 'normal', color);
+                    items.forEach(item => {
+                        const lines = doc.splitTextToSize(String(item), width - 6);
+                        doc.setFillColor(16, 185, 129);
+                        doc.circle(x + 1.5, y - 1.4, 1.1, 'F');
+                        doc.text(lines, x + 6, y);
+                        y += (lines.length * 5) + 3;
+                    });
+                    return y;
                 };
 
-                html2pdf().set(opt).from(clonedElement).save().then(() => {
-                    alert('✅ PDF BAIXADO COM SUCESSO!');
-                    btn.innerHTML = '✅ Baixado!';
-                    btn.style.borderColor = '#10b981';
-                    setTimeout(() => {
-                        btn.innerHTML = originalText;
-                        btn.style.borderColor = '';
-                        btn.disabled = false;
-                    }, 3000);
-                }).catch(error => {
-                    alert(`❌ ERRO ao gerar PDF: ${error.message}`);
-                    console.error('Erro PDF:', error);
-                    btn.innerHTML = originalText;
-                    btn.disabled = false;
+                // Pagina 1 - identificacao e grafico vetorial
+                setText(22, 'bold', primary);
+                doc.text('Diagnóstico de Liderança Situacional', margin, 25);
+                setText(11, 'normal', accent);
+                doc.text('Modelo LEAD - Hersey e Blanchard', margin, 33);
+                doc.setDrawColor(...accent);
+                doc.setLineWidth(1);
+                doc.line(margin, 39, pageWidth - margin, 39);
+
+                setText(8, 'bold', primary);
+                doc.text('PARTICIPANTE', margin, 51);
+                doc.text('E-MAIL', margin, 67);
+                doc.text('CARGO', 112, 51);
+                doc.text('DATA', 112, 67);
+                setText(10, 'normal', gray);
+                doc.text(appState.userData.name, margin, 57);
+                doc.text(appState.userData.email, margin, 73);
+                doc.text(appState.userData.position, 112, 57);
+                doc.text(new Date().toLocaleDateString('pt-BR'), 112, 73);
+
+                let y = sectionTitle('Resultado do Diagnóstico', 91);
+                const bars = [
+                    ['E1 - Determinar', appState.scores.E1, [30, 58, 95]],
+                    ['E2 - Persuadir', appState.scores.E2, [44, 90, 160]],
+                    ['E3 - Compartilhar', appState.scores.E3, [124, 58, 237]],
+                    ['E4 - Delegar', appState.scores.E4, [16, 185, 129]]
+                ];
+                bars.forEach(([label, score, color]) => {
+                    setText(10, 'bold', primary);
+                    doc.text(label, margin, y);
+                    setText(10, 'bold', color);
+                    doc.text(`${score}/12`, pageWidth - margin, y, { align: 'right' });
+                    doc.setFillColor(235, 238, 242);
+                    doc.roundedRect(margin, y + 4, contentWidth, 8, 2, 2, 'F');
+                    if (score > 0) {
+                        doc.setFillColor(...color);
+                        doc.roundedRect(margin, y + 4, contentWidth * (score / 12), 8, 2, 2, 'F');
+                    }
+                    y += 24;
                 });
-                
+                setText(13, 'bold', accent);
+                doc.text(`Estilo dominante: ${profile.name.split(':')[1].trim()}`, margin, y + 5);
+                setText(10, 'normal', gray);
+                writeWrapped(profile.subtitle, margin, y + 13, contentWidth);
+
+                // Pagina 2 - perfil dominante
+                doc.addPage();
+                addPageHeader('Perfil dominante');
+                y = sectionTitle(profile.name, 31);
+                setText(12, 'bold', accent);
+                doc.text(`Pontuação: ${appState.scores[appState.dominantStyle]} de 12`, margin, y);
+                setText(10, 'bold', primary);
+                doc.text(profile.subtitle, margin, y + 8);
+                setText(10, 'normal', gray);
+                y = writeWrapped(profile.description, margin, y + 18, contentWidth, 5.2) + 6;
+                setText(13, 'bold', primary);
+                doc.text('Pontos fortes', margin, y);
+                y = addBullets(profile.strengths, margin, y + 9, contentWidth) + 3;
+                setText(13, 'bold', [180, 110, 20]);
+                doc.text('Pontos de atenção', margin, y);
+                addBullets(profile.risks, margin, y + 9, contentWidth);
+
+                // Pagina 3 - perfil secundario, matriz e desenvolvimento
+                doc.addPage();
+                addPageHeader('Adaptação do estilo');
+                y = sectionTitle('Estilo secundário', 31);
+                setText(13, 'bold', primary);
+                doc.text(secondary.name, margin, y);
+                setText(10, 'normal', gray);
+                doc.text(`Pontuação: ${appState.scores[appState.secondaryStyle]} de 12 | ${secondary.subtitle}`, margin, y + 8);
+                y = sectionTitle('Matriz de Estilos', y + 25);
+                const columns = [margin, margin + 43, margin + 72, margin + 112, pageWidth - margin];
+                const rows = [
+                    ['E1 Determinar', 'Alta', 'Baixa', 'Equipe em estágio inicial (M1)'],
+                    ['E2 Persuadir', 'Alta', 'Alta', 'Equipe em desenvolvimento (M2)'],
+                    ['E3 Compartilhar', 'Baixa', 'Alta', 'Equipe competente, motivação frágil (M3)'],
+                    ['E4 Delegar', 'Baixa', 'Baixa', 'Equipe altamente madura (M4)']
+                ];
+                doc.setFillColor(...primary);
+                doc.rect(margin, y, contentWidth, 10, 'F');
+                setText(8, 'bold', [255, 255, 255]);
+                ['Estilo', 'Tarefa', 'Relação', 'Situação ideal'].forEach((header, i) => doc.text(header, columns[i] + 2, y + 6.5));
+                y += 10;
+                rows.forEach((row, rowIndex) => {
+                    doc.setFillColor(...(rowIndex % 2 ? [248, 249, 250] : [255, 255, 255]));
+                    doc.rect(margin, y, contentWidth, 15, 'F');
+                    setText(8, 'normal', gray);
+                    row.forEach((value, i) => {
+                        const width = columns[i + 1] - columns[i] - 4;
+                        doc.text(doc.splitTextToSize(value, width), columns[i] + 2, y + 5.5);
+                    });
+                    doc.setDrawColor(226, 232, 240);
+                    doc.line(margin, y + 15, pageWidth - margin, y + 15);
+                    y += 15;
+                });
+                y = sectionTitle('Dicas para desenvolvimento', y + 14);
+                addBullets(profile.tips, margin, y, contentWidth);
+
+                // Pagina 4 - proximos passos
+                doc.addPage();
+                addPageHeader('Plano de desenvolvimento');
+                y = sectionTitle('Proximos Passos', 36);
+                setText(11, 'normal', gray);
+                y = writeWrapped('Com base no seu diagnóstico, considere desenvolver conscientemente o seu estilo secundário. Líderes eficazes adaptam a combinação de direcionamento e apoio conforme a capacidade, a motivação e o contexto de cada pessoa ou equipe.', margin, y, contentWidth, 6) + 12;
+                setText(13, 'bold', primary);
+                doc.text('Sugestão prática', margin, y);
+                y = addBullets([
+                    'Escolha uma situação real de liderança para observar nas próximas duas semanas.',
+                    'Identifique o nível de capacidade e motivação da pessoa ou equipe envolvida.',
+                    'Aplique deliberadamente um estilo diferente do seu padrão quando o contexto exigir.',
+                    'Registre o resultado e ajuste sua abordagem no próximo ciclo.'
+                ], margin, y + 10, contentWidth) + 10;
+                setText(11, 'bold', accent);
+                doc.text('Desenvolvimento situacional é prática contínua, não um rótulo permanente.', margin, y);
+
+                const totalPages = doc.getNumberOfPages();
+                for (let page = 1; page <= totalPages; page++) {
+                    doc.setPage(page);
+                    doc.setDrawColor(226, 232, 240);
+                    doc.line(margin, pageHeight - 17, pageWidth - margin, pageHeight - 17);
+                    setText(8, 'normal', [130, 130, 130]);
+                    doc.text('Diagnóstico de Liderança Situacional - Modelo LEAD', margin, pageHeight - 11);
+                    doc.text(`Página ${page} de ${totalPages}`, pageWidth - margin, pageHeight - 11, { align: 'right' });
+                }
+
+                const filename = `Diagnostico-LEAD-${sanitizeFilename(appState.userData.name)}-${new Date().toISOString().split('T')[0]}.pdf`;
+                doc.save(filename);
+                btn.innerHTML = '✅ PDF baixado';
+                btn.style.borderColor = '#10b981';
+                showSuccessMessage('✅ PDF completo gerado com sucesso.');
             } catch (error) {
-                alert(`❌ ERRO: ${error.message}`);
-                console.error('Erro:', error);
-                btn.disabled = false;
-                btn.innerHTML = originalText;
+                console.error('Erro ao gerar PDF:', error);
+                showErrorMessage(`❌ Não foi possível gerar o PDF: ${error.message}`);
+            } finally {
+                setTimeout(() => {
+                    btn.innerHTML = originalText;
+                    btn.style.borderColor = '';
+                    btn.disabled = false;
+                }, 2500);
             }
         }
 
@@ -1501,7 +1723,9 @@
         <!-- REPORT SCREEN -->
         <div class="screen report-screen">
             <div class="success-message"></div>
+            <div class="error-message"></div>
             
+            <div class="report-document" id="pdfReport">
             <div class="report-content">
                 <div class="report-header">
                     <h1 class="report-title">Relatório de Diagnóstico de Liderança Situacional</h1>
@@ -1520,7 +1744,7 @@
                         </div>
                         <div class="report-meta-item">
                             <span class="report-meta-label">Data</span>
-                            <span id="reportDate"></span>
+                            <span data-report-date></span>
                         </div>
                     </div>
                 </div>
@@ -1552,11 +1776,11 @@
                 </div>
 
                 <div class="report-footer">
-                    <p>Relatório gerado em <span id="reportDate"></span> | Diagnóstico de Liderança Situacional - Modelo LEAD (Hersey & Blanchard)</p>
+                    <p>Relatório gerado em <span data-report-date></span> | Diagnóstico de Liderança Situacional - Modelo LEAD (Hersey & Blanchard)</p>
                 </div>
             </div>
 
-            <div class="report-content">
+            <div class="report-content pdf-page-break-before">
                 <div style="text-align: center; margin-bottom: 40px;">
                     <h2 style="color: var(--primary); margin-bottom: 20px;">Próximos Passos</h2>
                     <p style="color: #666; line-height: 1.8; margin-bottom: 20px;">
@@ -1569,6 +1793,7 @@
                 <div class="report-footer">
                     <p>Aproveite este diagnóstico para reflexão e desenvolvimento contínuo.</p>
                 </div>
+            </div>
             </div>
 
             <div class="button-group-report">
